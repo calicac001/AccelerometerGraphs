@@ -121,38 +121,81 @@ server <- function(input, output, session) {
     }
   })
   
+  # Get baseline acceleration from selected range and apply to the plot
+  # Problem with this implementation: doesn't account for dynamic baseline so
+  # once the acceleration is applied, not all the flat lines go to zero.
+  
+  # observeEvent(input$apply_base_modal, {
+  #   req(csv_to_df())
+  #   df <- csv_to_df()
+  #   req(vals$baseline_range)
+  #   
+  #   # get the baseline data and format date so it matches the one in the df
+  #   baseline_data <- vals$baseline_range %>%
+  #     mutate(x = as.POSIXct(x, format = "%Y-%m-%d %H:%M:%OS"))
+  #   
+  #   # filter the dataframe for only the values in selected baseline
+  #   df_baseline <- df[df$Time %in% baseline_data$x, ]
+  #   
+  #   # Get the baseline acceleration of the selected range separately for each axis
+  #   mean_acc_x <- mean(df_baseline$Acc_X)
+  #   mean_acc_y <- mean(df_baseline$Acc_Y)
+  #   mean_acc_z <- mean(df_baseline$Acc_Z)
+  #   
+  #   # apply the baseline correction to all the values in each axis
+  #   df$Adj_Acc_X <- df$Acc_X - mean_acc_x
+  #   df$Adj_Acc_Y <- df$Acc_Y - mean_acc_y
+  #   df$Adj_Acc_Z <- df$Acc_Z - mean_acc_z
+  #   
+  #   # calculate adjusted net acceleration
+  #   df$Adj_Net_Acc <- sqrt(df$Adj_Acc_Z^2 + df$Adj_Acc_Y^2 + df$Adj_Acc_X^2)
+  #   
+  #   # update the plot with the adjusted acceleration
+  #   output$plot <- renderPlotly({
+  #     plot_ly(df, x = ~Time, y= ~Adj_Net_Acc, 
+  #             type = 'scatter', mode = 'lines') %>%
+  #       layout(title = "Adjusted Net Acceleration Over Time",
+  #              xaxis = list(title = "Time"),
+  #              yaxis = list(title = "Acceleration (g)"))
+  #   })
+  # })
+  
   observeEvent(input$apply_base_modal, {
     req(csv_to_df())
     df <- csv_to_df()
     req(vals$baseline_range)
     
-    # get the baseline data and format date so it matched the one in the df
-    baseline_data <- vals$baseline_range %>%
-      mutate(x = as.POSIXct(x, format = "%Y-%m-%d %H:%M:%OS"))
-    
-    # filter the dataframe for only the values in selected baseline
-    df_baseline <- df[df$Time %in% baseline_data$x, ]
-    
-    # Get the baseline acceleration of the selected range separately for each axis
-    mean_acc_x <- mean(df_baseline$Acc_X)
-    mean_acc_y <- mean(df_baseline$Acc_Y)
-    mean_acc_z <- mean(df_baseline$Acc_Z)
-    
-    # apply the baseline correction to all the values in each axis
-    df$Adj_Acc_X <- df$Acc_X - mean_acc_x
-    df$Adj_Acc_Y <- df$Acc_Y - mean_acc_y
-    df$Adj_Acc_Z <- df$Acc_Z - mean_acc_z
-    
+    num_segment = 50
+    for (i in 1:num_segment){
+      # filter the dataframe for only the values in the selected range
+      start_row <- (nrow(df) %/% num_segment) * (i - 1) + 1
+      
+      end_row <- min((nrow(df) %/% num_segment) * i, nrow(df))
+      
+      df_sub <- df[start_row:end_row, ]
+      
+      # Get the baseline acceleration of the selected range separately for each axis
+      condition <- abs(df_sub$net_acceleration - 1) < 0.01
+      mean_acc_x <- mean(df_sub$Acc_X[condition])
+      mean_acc_y <- mean(df_sub$Acc_Y[condition])
+      mean_acc_z <- mean(df_sub$Acc_Z[condition])
+      
+      # apply the baseline correction to all the values in each axis
+      df[start_row:end_row, "Adj_Acc_X"] <- df[start_row:end_row, "Acc_X"] - mean_acc_x
+      df[start_row:end_row, "Adj_Acc_Y"] <- df[start_row:end_row, "Acc_Y"] - mean_acc_y
+      df[start_row:end_row, "Adj_Acc_Z"] <- df[start_row:end_row, "Acc_Z"] - mean_acc_z
+    }
     # calculate adjusted net acceleration
     df$Adj_Net_Acc <- sqrt(df$Adj_Acc_Z^2 + df$Adj_Acc_Y^2 + df$Adj_Acc_X^2)
     
     # update the plot with the adjusted acceleration
     output$plot <- renderPlotly({
-      plot_ly(df, x = ~Time, y= ~Adj_Net_Acc, 
+      plot_ly(df, x = ~Time, y= ~Adj_Net_Acc,
               type = 'scatter', mode = 'lines') %>%
         layout(title = "Adjusted Net Acceleration Over Time",
                xaxis = list(title = "Time"),
                yaxis = list(title = "Acceleration (g)"))
     })
+      
   })
 }
