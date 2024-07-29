@@ -25,7 +25,6 @@ server <- function(input, output, session) {
     raw_data <- na.omit(raw_data)
     df(raw_data)
     
-    print(df())
   }
   
   plot_graph <- function(df){
@@ -210,6 +209,8 @@ server <- function(input, output, session) {
   })
   
   ############################################################################
+  
+  # Reset graph to default w/o acceleration adjustments 
   observeEvent(input$reset_graph, {
     read_df(input$file1$datapath)
     
@@ -218,4 +219,35 @@ server <- function(input, output, session) {
       plot_graph(df())
     })
   })
+  
+  #############################################################################
+  
+  # Compute and display acceleration metrics
+  observeEvent(input$calc_metrics, {
+    req(df())
+    df <- df()
+    
+    df_metric <- na.omit(df[df$Adj_Net_Acc > 0, ])
+    
+    mean_acc <- mean(df_metric$Adj_Net_Acc)
+    max_acc <- max(df_metric$Adj_Net_Acc)
+    median_acc <- median(df_metric$Adj_Net_Acc)
+
+    df_metric$Time_numeric <- as.numeric(df_metric$Time - min(df_metric$Time))
+    
+    # Compute AUC of net acceleration using trapezoidal rule
+    auc_value <- trapz(df_metric$Time_numeric, df_metric$Adj_Net_Acc)
+    time <- max(df_metric$Time) - min(df_metric$Time)
+    
+    output$metrics <- renderText({
+      
+        result <- paste0("AUC: ", round(auc_value, 3), " g", "\n",
+                        "Mean Acc: ", round(mean_acc, 3), " g", "\n",
+                        "Median Acc: ", round(median_acc, 3), " g", "\n",
+                        "Max Acc: ", round(max_acc, 3), " g", "\n",
+                        "Time: ", round(time, 2)*60, " secs")
+        return(result)
+    })
+  })
+  
 }

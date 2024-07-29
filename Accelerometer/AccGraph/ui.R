@@ -36,14 +36,16 @@ ui <- fluidPage(
               actionButton("base_range_modal", "Select Peaks to Remove"),
               verbatimTextOutput("baseline_range"),
               actionButton("remove_peaks", "Remove Selected Peaks"),
-              actionButton("reset_graph", "Reset Graph")
+              actionButton("reset_graph", "Reset Graph"),
+              actionButton("calc_metrics", "Calculate Metrics")
           )
               
         ),
 
         # Show a plot of the generated distribution
         mainPanel(
-            plotlyOutput("plot")
+            plotlyOutput("plot"),
+            verbatimTextOutput("metrics")
         )
     )
 )
