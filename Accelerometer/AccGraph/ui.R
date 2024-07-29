@@ -11,7 +11,7 @@ ui <- fluidPage(
             .box {
               border: 1px solid #ccc;
               padding: 10px;
-              margin-bottom: 10px;
+              margin-bottom: 5px;
             }
             .box-title {
               font-weight: bold;
@@ -31,20 +31,18 @@ ui <- fluidPage(
           
           div(class = "box",
               div(class = "box-title", "Baseline Acceleration"),      
-              #textInput("start_time", "Start Time (HH:MM:SS)", "00:00:00"),
-              #textInput("end_time", "End Time (HH:MM:SS)", "00:00:00"),
               
+              actionButton("apply_base_modal", "Apply Acceleration Adjustment"),
               actionButton("base_range_modal", "Select Baseline Acceleration"),
               verbatimTextOutput("baseline_range"),
-              actionButton("apply_base_modal", "Apply Acceleration Adjustment"),
+              actionButton("remove_peaks", "Remove Selected Peaks")
           )
               
         ),
 
         # Show a plot of the generated distribution
         mainPanel(
-            plotlyOutput("plot"),
-            verbatimTextOutput("baseline_acceleration")
+            plotlyOutput("plot")
         )
     )
 )

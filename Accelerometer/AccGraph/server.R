@@ -3,40 +3,39 @@ library(dplyr)
 library(tidyr)
 library(pracma)
 library(plotly)
+library(shinyalert)
 
 server <- function(input, output, session) {
   
-  # Read the csv file inputted by user
-  data <- reactive({
-    req(input$file1)
-    read.csv(input$file1$datapath, sep=",", header=TRUE)
-  })
+  df <- reactiveVal(NULL)
   
-  # Process CSV data into a dataframe
-  csv_to_df <- reactive({
-    req(data())
+  # Read the csv file inputted by user
+  observe({
+    req(input$file1)
     
-    df <- data()
+    raw_data <- read.csv(input$file1$datapath, sep=",", header=TRUE)
+  
     date_str <- paste(Sys.Date()," 00:")
     
     # Calculate net acceleration
-    df <- df[, 3:6] %>%
+    raw_data <- raw_data[, 3:6] %>%
       rename(Time = Chip.Time.., Acc_X = Acceleration.X.g., 
              Acc_Y = Acceleration.Y.g., Acc_Z = Acceleration.Z.g.) %>%
       mutate(Time = as.POSIXct(paste(date_str, Time), 
                                format = "%Y-%m-%d %H:%M:%OS")) %>%
       mutate(net_acceleration = sqrt(Acc_X^2 + Acc_Y^2 + Acc_Z^2)) 
     
-    df <- na.omit(df)
-    df
+    raw_data <- na.omit(raw_data)
+    
+    df(raw_data)
   })
   
   # Render the Net Acceleration Plot
   output$plot <- renderPlotly({
-    req(csv_to_df())
-    df <- csv_to_df()
+    req(df())
+    df_plot <- df()
     
-    plot_ly(df, x = ~Time, y= ~net_acceleration, 
+    plot_ly(df_plot, x = ~Time, y= ~net_acceleration, 
             type = 'scatter', mode = 'lines') %>%
       layout(title = "Net Acceleration Over Time",
              xaxis = list(title = "Time"),
@@ -57,113 +56,10 @@ server <- function(input, output, session) {
     ))
   })
   
-  # Render the plot within the modal
-  output$base_range_plot <- renderPlotly({
-    df <- csv_to_df()
-    req(df)
-    
-    # Initially, mode=lines but for some reason, plotly_selected doesn't
-    # recognize the selected points. Upon further investigation, discovered
-    # that points aren't recognized if we're using mode=lines.
-    
-    # Workaround is using mode="lines+markers" but making the markers invisible
-    # by setting the opacity property to 0.
-    p <- plot_ly(df, x = ~Time, y = ~net_acceleration, type = 'scatter', 
-                 mode='lines+markers', marker=list(opacity=0)) %>%
-      layout(title = "Select Baseline Range", xaxis = list(title = "Time"), 
-             yaxis = list(title = "Acceleration (g)"), dragmode = "select")
-    
-    event_register(p, "plotly_selected")
-    
-    p
-  })
-  
-  # Capture selected data range
-  selected_data <- reactive({
-    event_data("plotly_selected")
-  })
-  
-  
-  vals <- reactiveValues(baseline_range = NULL)
-  
-  # Apply selected time range as baseline
-  observeEvent(input$apply_time_range, {
-    vals$baseline_range <- selected_data()
-    removeModal()
-  })
-  
-  output$baseline_range <- renderPrint({
-    sel_data <- vals$baseline_range
-    if (!is.null(sel_data) && nrow(sel_data) > 0) {
-      range <- sel_data$x
-      start_time <- format(as.POSIXct(range[1]), "%H:%M:%S")
-      end_time <- format(as.POSIXct(range[2]), "%H:%M:%S")
-      cat("Selected time range: \n")
-      cat(paste(start_time, "to", end_time))
-    } else {
-      cat("No time range selected")
-    }
-  })
-  
-  # Calculate and display baseline acceleration
-  output$baseline_acceleration <- renderPrint({
-    df <- csv_to_df()
-    req(df)
-    
-    sel_data <- vals$baseline_range
-    if (!is.null(sel_data) && nrow(sel_data) > 0) {
-      range <- range(sel_data$x)
-      baseline_df <- df %>% filter(Time >= range[1] & Time <= range[2])
-      baseline_acc <- mean(baseline_df$net_acceleration, na.rm = TRUE)
-      cat(paste("Baseline acceleration (mean):", round(baseline_acc, 4), "g"))
-    } else {
-      cat("No baseline range selected")
-    }
-  })
-  
-  # Get baseline acceleration from selected range and apply to the plot
-  # Problem with this implementation: doesn't account for dynamic baseline so
-  # once the acceleration is applied, not all the flat lines go to zero.
-  
-  # observeEvent(input$apply_base_modal, {
-  #   req(csv_to_df())
-  #   df <- csv_to_df()
-  #   req(vals$baseline_range)
-  #   
-  #   # get the baseline data and format date so it matches the one in the df
-  #   baseline_data <- vals$baseline_range %>%
-  #     mutate(x = as.POSIXct(x, format = "%Y-%m-%d %H:%M:%OS"))
-  #   
-  #   # filter the dataframe for only the values in selected baseline
-  #   df_baseline <- df[df$Time %in% baseline_data$x, ]
-  #   
-  #   # Get the baseline acceleration of the selected range separately for each axis
-  #   mean_acc_x <- mean(df_baseline$Acc_X)
-  #   mean_acc_y <- mean(df_baseline$Acc_Y)
-  #   mean_acc_z <- mean(df_baseline$Acc_Z)
-  #   
-  #   # apply the baseline correction to all the values in each axis
-  #   df$Adj_Acc_X <- df$Acc_X - mean_acc_x
-  #   df$Adj_Acc_Y <- df$Acc_Y - mean_acc_y
-  #   df$Adj_Acc_Z <- df$Acc_Z - mean_acc_z
-  #   
-  #   # calculate adjusted net acceleration
-  #   df$Adj_Net_Acc <- sqrt(df$Adj_Acc_Z^2 + df$Adj_Acc_Y^2 + df$Adj_Acc_X^2)
-  #   
-  #   # update the plot with the adjusted acceleration
-  #   output$plot <- renderPlotly({
-  #     plot_ly(df, x = ~Time, y= ~Adj_Net_Acc, 
-  #             type = 'scatter', mode = 'lines') %>%
-  #       layout(title = "Adjusted Net Acceleration Over Time",
-  #              xaxis = list(title = "Time"),
-  #              yaxis = list(title = "Acceleration (g)"))
-  #   })
-  # })
   
   observeEvent(input$apply_base_modal, {
-    req(csv_to_df())
-    df <- csv_to_df()
-    req(vals$baseline_range)
+    req(df())
+    df <- df()
     
     num_segment = 50
     for (i in 1:num_segment){
@@ -188,6 +84,9 @@ server <- function(input, output, session) {
     # calculate adjusted net acceleration
     df$Adj_Net_Acc <- sqrt(df$Adj_Acc_Z^2 + df$Adj_Acc_Y^2 + df$Adj_Acc_X^2)
     
+    # round to 0 if number is really small to account for leftovers of baseline adjustment
+    df$Adj_Net_Acc[df$Adj_Net_Acc <= 0.1] <- 0
+    
     # update the plot with the adjusted acceleration
     output$plot <- renderPlotly({
       plot_ly(df, x = ~Time, y= ~Adj_Net_Acc,
@@ -196,6 +95,109 @@ server <- function(input, output, session) {
                xaxis = list(title = "Time"),
                yaxis = list(title = "Acceleration (g)"))
     })
+    
+    df(df)  
+  })
+  
+  # Render the plot within the modal
+  output$base_range_plot <- renderPlotly({
+    df <- df()
+    req(df)
+    
+    # Initially, mode=lines but for some reason, plotly_selected doesn't
+    # recognize the selected points. Upon further investigation, discovered
+    # that points aren't recognized if we're using mode=lines.
+    
+    # Workaround is using mode="lines+markers" but making the markers invisible
+    # by setting the opacity property to 0.
+    p <- plot_ly(df, x = ~Time, y = ~Adj_Net_Acc, type = 'scatter', 
+                 mode='lines+markers', marker=list(opacity=0)) %>%
+      layout(title = "Select Peaks to Remove", xaxis = list(title = "Time"), 
+             yaxis = list(title = "Acceleration (g)"), dragmode = "select")
+    
+    event_register(p, "plotly_selected")
+    
+    p
+  })
+  
+  #############################################################################
+  
+  ranges_to_remove <- reactiveValues(selected = list())
+  
+  # Capture selected data range
+  observeEvent(input$apply_time_range, {
+    selected_data <- event_data("plotly_selected")
+    
+    if (!is.null(selected_data) && nrow(selected_data) > 0) {
+      raw_range <- range(selected_data$x)
+      start_time <- as.POSIXct(raw_range[1])
+      end_time <- as.POSIXct(raw_range[2])
       
+      #all_range <- seq(from=start_time, to=end_time, by=0.01)
+      all_range <- c(start_time, end_time)
+      ranges_to_remove$selected <- c(ranges_to_remove$selected, list(all_range))
+    }
+    removeModal()
+  })
+  
+  
+  output$baseline_range <- renderText({
+    sel_data <- ranges_to_remove$selected
+    
+    if (length(sel_data) > 0) {
+      result <- "Selected time range(s):\n"
+    
+      result <- paste0(result, 
+                      paste(unlist(lapply(sel_data, function(data) {
+                        start_time <- format(as.POSIXct(data[1]), format="%H:%M:%OS")
+                        end_time <- format(as.POSIXct(data[2]), format="%H:%M:%OS")
+                        paste(start_time, "to", end_time)
+                      })), collapse = "\n"), 
+                      collapse = "\n")
+      return(result)
+      
+    } else {
+      return("No time range selected")
+    }
+  })
+  
+  observeEvent(input$remove_peaks, {
+    df <- df()
+    req(df)
+    
+    sel_data <- ranges_to_remove$selected
+    
+    if (length(sel_data) > 0) {
+      to_remove <- bind_rows(lapply(sel_data, function(data) {
+        start_time <- as.POSIXct(data[1], format = "%Y-%m-%d %H:%M:%OS", tz = "UTC")
+        end_time <- as.POSIXct(data[2], format = "%Y-%m-%d %H:%M:%OS", tz = "UTC")
+        data.frame(time_point = seq(from = start_time, to = end_time, by = 0.1))
+      }))
+      
+      # Columns to be modified
+      cols_to_modify <- c("Adj_Acc_X", "Adj_Acc_Y", "Adj_Acc_Z", "Adj_Net_Acc")
+  
+      # Update the df data frame based on the to_remove time ranges
+      for (col in cols_to_modify) {
+        df[[col]][df$Time %in% to_remove$time_point] <- 0
+      }
+      
+      # Save the updated df
+      df(df)
+      
+      output$plot <- renderPlotly({
+        plot_ly(df, x = ~Time, y= ~Adj_Net_Acc,
+                type = 'scatter', mode = 'lines') %>%
+          layout(title = "Adjusted Net Acceleration Over Time",
+                 xaxis = list(title = "Time", tickformat = "%H:%M:%S"),
+                 yaxis = list(title = "Acceleration (g)"))
+      })
+    
+    } else {
+      shinyalert(
+        title = "Error",
+        text = "No ranges selected to be removed!",
+        type = "error")
+    }
   })
 }
