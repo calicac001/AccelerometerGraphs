@@ -30,12 +30,13 @@ ui <- fluidPage(
           ),
           
           div(class = "box",
-              div(class = "box-title", "Baseline Acceleration"),      
+              div(class = "box-title", "Acceleration Adjustment"),      
               
-              actionButton("apply_base_modal", "Apply Acceleration Adjustment"),
-              actionButton("base_range_modal", "Select Baseline Acceleration"),
+              actionButton("apply_base_modal", "Apply Adjustment"),
+              actionButton("base_range_modal", "Select Peaks to Remove"),
               verbatimTextOutput("baseline_range"),
-              actionButton("remove_peaks", "Remove Selected Peaks")
+              actionButton("remove_peaks", "Remove Selected Peaks"),
+              actionButton("reset_graph", "Reset Graph")
           )
               
         ),

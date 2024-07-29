@@ -9,12 +9,9 @@ server <- function(input, output, session) {
   
   df <- reactiveVal(NULL)
   
-  # Read the csv file inputted by user
-  observe({
-    req(input$file1)
+  read_df <- function(input_file){
+    raw_data <- read.csv(input_file, sep=",", header=TRUE)
     
-    raw_data <- read.csv(input$file1$datapath, sep=",", header=TRUE)
-  
     date_str <- paste(Sys.Date()," 00:")
     
     # Calculate net acceleration
@@ -26,20 +23,31 @@ server <- function(input, output, session) {
       mutate(net_acceleration = sqrt(Acc_X^2 + Acc_Y^2 + Acc_Z^2)) 
     
     raw_data <- na.omit(raw_data)
-    
     df(raw_data)
+    
+    print(df())
+  }
+  
+  plot_graph <- function(df){
+    plot_ly(df, x = ~Time, y= ~net_acceleration, 
+            type = 'scatter', mode = 'lines') %>%
+      layout(title = "Net Acceleration Over Time",
+             xaxis = list(title = "Time"),
+             yaxis = list(title = "Acceleration (g)")) 
+  }
+  
+  ############################################################################
+  
+  # Read the csv file inputted by user
+  observe({
+    req(input$file1)
+    read_df(input$file1$datapath)
   })
   
   # Render the Net Acceleration Plot
   output$plot <- renderPlotly({
     req(df())
-    df_plot <- df()
-    
-    plot_ly(df_plot, x = ~Time, y= ~net_acceleration, 
-            type = 'scatter', mode = 'lines') %>%
-      layout(title = "Net Acceleration Over Time",
-             xaxis = list(title = "Time"),
-             yaxis = list(title = "Acceleration (g)"))
+    plot_graph(df())
   })
   
   #############################################################################
@@ -199,5 +207,15 @@ server <- function(input, output, session) {
         text = "No ranges selected to be removed!",
         type = "error")
     }
+  })
+  
+  ############################################################################
+  observeEvent(input$reset_graph, {
+    read_df(input$file1$datapath)
+    
+    output$plot <- renderPlotly({
+      req(df())
+      plot_graph(df())
+    })
   })
 }
