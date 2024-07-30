@@ -4,6 +4,7 @@ library(tidyr)
 library(pracma)
 library(plotly)
 library(shinyalert)
+library(shinyjs)
 
 server <- function(input, output, session) {
   
@@ -118,7 +119,7 @@ server <- function(input, output, session) {
     # Workaround is using mode="lines+markers" but making the markers invisible
     # by setting the opacity property to 0.
     p <- plot_ly(df, x = ~Time, y = ~Adj_Net_Acc, type = 'scatter', 
-                 mode='lines+markers', marker=list(opacity=0)) %>%
+                 mode='lines+markers', marker=list(opacity=0), source = "A") %>%
       layout(title = "Select Peaks to Remove", xaxis = list(title = "Time"), 
              yaxis = list(title = "Acceleration (g)"), dragmode = "select")
     
@@ -137,34 +138,73 @@ server <- function(input, output, session) {
     
     if (!is.null(selected_data) && nrow(selected_data) > 0) {
       raw_range <- range(selected_data$x)
-      start_time <- as.POSIXct(raw_range[1])
-      end_time <- as.POSIXct(raw_range[2])
+      start_time <- as.POSIXct(raw_range[1],format = "%Y-%m-%d %H:%M:%OS", tz = "UTC")
+      end_time <- as.POSIXct(raw_range[2], format = "%Y-%m-%d %H:%M:%OS", tz = "UTC")
       
-      #all_range <- seq(from=start_time, to=end_time, by=0.01)
       all_range <- c(start_time, end_time)
       ranges_to_remove$selected <- c(ranges_to_remove$selected, list(all_range))
+      
+      # rest plot_selectde to Null
+      runjs("console.log('Running JavaScript to clear input value'); Shiny.setInputValue('plotly_selected-A', null);")
+      
+    } else {
+      shinyalert(
+        title = "Error",
+        text = "No ranges selected to be removed!",
+        type = "error")
     }
+
     removeModal()
   })
   
-  
-  output$baseline_range <- renderText({
+  checklist_items <- reactive({
     sel_data <- ranges_to_remove$selected
-    
-    if (length(sel_data) > 0) {
-      result <- "Selected time range(s):\n"
-    
-      result <- paste0(result, 
-                      paste(unlist(lapply(sel_data, function(data) {
-                        start_time <- format(as.POSIXct(data[1]), format="%H:%M:%OS")
-                        end_time <- format(as.POSIXct(data[2]), format="%H:%M:%OS")
-                        paste(start_time, "to", end_time)
-                      })), collapse = "\n"), 
-                      collapse = "\n")
-      return(result)
       
-    } else {
-      return("No time range selected")
+      if (length(sel_data) > 0) {
+        result <- c(unlist(lapply(sel_data, function(data) {
+                    start_time <- format(as.POSIXct(data[1]), format="%H:%M:%OS")
+                    end_time <- format(as.POSIXct(data[2]), format="%H:%M:%OS")
+                    paste(start_time, "to", end_time)
+                 })))
+        return(result)
+
+      } else {
+        return(NULL)
+      }
+  })
+  
+  # Render the checklist UI if items are available
+  output$range_checklist <- renderUI({
+    items <- checklist_items()
+    if (!is.null(items)) {
+      checkboxGroupInput("checklist", "Select Time Ranges:", choices = items)
+    }
+  })
+  
+  observeEvent(input$remove_selected, {
+    selected <- input$checklist
+    if (!is.null(selected)) {
+      df_to_remove <- lapply(selected, function(data) {
+        data <- unlist(strsplit(data, " to "))
+        start_time <- as.POSIXct(paste(Sys.Date(), data[1]), format = "%Y-%m-%d %H:%M:%OS", tz = "UTC")
+        end_time <- as.POSIXct(paste(Sys.Date(), data[2]), format = "%Y-%m-%d %H:%M:%OS", tz = "UTC")
+
+        c(start_time, end_time)
+      })
+      
+      round_time <- function(x) as.POSIXct(floor(as.numeric(x)), origin="1970-01-01", tz="UTC")
+      list1 <- lapply(ranges_to_remove$selected, round_time)
+      list2 <- lapply(df_to_remove, round_time)
+      
+      is_in_ref <- function(sublist, ref_list) {
+        !any(sapply(ref_list, function(ref) identical(sublist, ref)))
+      }
+
+      # Filter the list
+      filtered_list <- Filter(function(sublist) is_in_ref(sublist, list2), list1)
+      print(filtered_list)
+
+      ranges_to_remove$selected <- filtered_list
     }
   })
   
@@ -172,12 +212,15 @@ server <- function(input, output, session) {
     df <- df()
     req(df)
     
-    sel_data <- ranges_to_remove$selected
+    sel_data <- input$checklist
     
     if (length(sel_data) > 0) {
       to_remove <- bind_rows(lapply(sel_data, function(data) {
-        start_time <- as.POSIXct(data[1], format = "%Y-%m-%d %H:%M:%OS", tz = "UTC")
-        end_time <- as.POSIXct(data[2], format = "%Y-%m-%d %H:%M:%OS", tz = "UTC")
+        data <- unlist(strsplit(data, " to "))
+  
+        start_time <- as.POSIXct(paste(Sys.Date(), data[1]), format = "%Y-%m-%d %H:%M:%OS", tz = "UTC")
+        end_time <- as.POSIXct(paste(Sys.Date(), data[2]), format = "%Y-%m-%d %H:%M:%OS", tz = "UTC")
+      
         data.frame(time_point = seq(from = start_time, to = end_time, by = 0.1))
       }))
       
