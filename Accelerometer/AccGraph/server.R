@@ -11,8 +11,9 @@ server <- function(input, output, session) {
   df <- reactiveVal(NULL)
   
   read_df <- function(input_file){
-    raw_data <- read.csv(input_file, sep=",", header=TRUE)
-    
+    raw_data <- read.csv(input_file, sep=",",  header=TRUE, encoding = "latin1")
+    raw_data <- as.data.frame(raw_data)
+    print(raw_data)
     date_str <- paste(Sys.Date()," 00:")
     
     # Calculate net acceleration
@@ -53,15 +54,22 @@ server <- function(input, output, session) {
   #############################################################################
   
   observeEvent(input$base_range_modal, {
-    showModal(modalDialog(
-      title = "Select Baseline Time Range",
-      plotlyOutput("base_range_plot"),
-      easyClose = TRUE,
-      footer = tagList(
-        modalButton("Cancel"),
-        actionButton("apply_time_range", "Apply")
-      )
-    ))
+    df <- df()
+    req(df)
+    if ("Adj_Net_Acc" %in% colnames(df)){
+      showModal(modalDialog(
+        title = "Peak Selection",
+        plotlyOutput("base_range_plot"),
+        easyClose = TRUE,
+        footer = tagList(
+          modalButton("Cancel"),
+          actionButton("apply_time_range", "Add"))
+    ))} else {
+      shinyalert(
+        title = "Error",
+        text = "Cannot select peaks for raw plot!",
+        type = "error")
+    }
   })
   
   
@@ -120,7 +128,7 @@ server <- function(input, output, session) {
     # by setting the opacity property to 0.
     p <- plot_ly(df, x = ~Time, y = ~Adj_Net_Acc, type = 'scatter', 
                  mode='lines+markers', marker=list(opacity=0), source = "A") %>%
-      layout(title = "Select Peaks to Remove", xaxis = list(title = "Time"), 
+      layout(title = "Adjusted Acceleration Over Time", xaxis = list(title = "Time"), 
              yaxis = list(title = "Acceleration (g)"), dragmode = "select")
     
     event_register(p, "plotly_selected")
@@ -182,6 +190,7 @@ server <- function(input, output, session) {
   })
   
   observeEvent(input$remove_selected, {
+    req(df())
     selected <- input$checklist
     if (!is.null(selected)) {
       df_to_remove <- lapply(selected, function(data) {
@@ -205,6 +214,11 @@ server <- function(input, output, session) {
       print(filtered_list)
 
       ranges_to_remove$selected <- filtered_list
+    } else {
+      shinyalert(
+        title = "Error",
+        text = "No ranges selected to remove!",
+        type = "error")
     }
   })
   
@@ -255,6 +269,7 @@ server <- function(input, output, session) {
   
   # Reset graph to default w/o acceleration adjustments 
   observeEvent(input$reset_graph, {
+    req(input$file1$datapath)
     read_df(input$file1$datapath)
     
     output$plot <- renderPlotly({
@@ -270,27 +285,34 @@ server <- function(input, output, session) {
     req(df())
     df <- df()
     
-    df_metric <- na.omit(df[df$Adj_Net_Acc > 0, ])
-    
-    mean_acc <- mean(df_metric$Adj_Net_Acc)
-    max_acc <- max(df_metric$Adj_Net_Acc)
-    median_acc <- median(df_metric$Adj_Net_Acc)
-
-    df_metric$Time_numeric <- as.numeric(df_metric$Time - min(df_metric$Time))
-    
-    # Compute AUC of net acceleration using trapezoidal rule
-    auc_value <- trapz(df_metric$Time_numeric, df_metric$Adj_Net_Acc)
-    time <- max(df_metric$Time) - min(df_metric$Time)
-    
-    output$metrics <- renderText({
+    if ("Adj_Net_Acc" %in% colnames(df)){
+      df_metric <- na.omit(df[df$Adj_Net_Acc > 0, ])
       
-        result <- paste0("AUC: ", round(auc_value, 3), " g", "\n",
-                        "Mean Acc: ", round(mean_acc, 3), " g", "\n",
-                        "Median Acc: ", round(median_acc, 3), " g", "\n",
-                        "Max Acc: ", round(max_acc, 3), " g", "\n",
-                        "Time: ", round(time, 2)*60, " secs")
-        return(result)
-    })
+      mean_acc <- mean(df_metric$Adj_Net_Acc)
+      max_acc <- max(df_metric$Adj_Net_Acc)
+      median_acc <- median(df_metric$Adj_Net_Acc)
+  
+      df_metric$Time_numeric <- as.numeric(df_metric$Time - min(df_metric$Time))
+      
+      # Compute AUC of net acceleration using trapezoidal rule
+      auc_value <- trapz(df_metric$Time_numeric, df_metric$Adj_Net_Acc)
+      time <- max(df_metric$Time) - min(df_metric$Time)
+      
+      output$metrics <- renderText({
+        
+          result <- paste0("AUC: ", round(auc_value, 3), " g", "\n",
+                          "Mean Acc: ", round(mean_acc, 3), " g", "\n",
+                          "Median Acc: ", round(median_acc, 3), " g", "\n",
+                          "Max Acc: ", round(max_acc, 3), " g", "\n",
+                          "Time: ", round(time, 2)*60, " secs")
+          return(result)
+      })
+  } else{
+      shinyalert(
+        title = "Error",
+        text = "Cannot calculate metrics for raw plot!",
+        type = "error")
+  }
   })
   
 }
